@@ -27,6 +27,7 @@ pub enum Error {
   UnsupportedInstruction,
   /// A memory operation failed.
   RegionFailure(region::Error),
+  LayoutError(std::alloc::LayoutError),
 }
 
 impl StdError for Error {
@@ -51,6 +52,7 @@ impl fmt::Display for Error {
       Error::OutOfMemory => write!(f, "Cannot allocate memory"),
       Error::UnsupportedInstruction => write!(f, "Address contains an unsupported instruction"),
       Error::RegionFailure(ref error) => write!(f, "{}", error),
+      Error::LayoutError(ref error) => write!(f, "{}", error),
     }
   }
 }
@@ -58,5 +60,11 @@ impl fmt::Display for Error {
 impl From<region::Error> for Error {
   fn from(error: region::Error) -> Self {
     Error::RegionFailure(error)
+  }
+}
+
+impl From<std::alloc::LayoutError> for Error {
+  fn from(value: std::alloc::LayoutError) -> Self {
+    Error::LayoutError(value)
   }
 }

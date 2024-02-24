@@ -24,8 +24,6 @@ impl Detour {
     }
 
     // Lock this so OS operations are not performed in parallell
-    let mut pool = memory::POOL.lock().unwrap();
-
     if !util::is_executable_address(target)? || !util::is_executable_address(detour)? {
       Err(Error::NotExecutable)?;
     }
@@ -36,7 +34,7 @@ impl Detour {
 
     // A relay is used in case a normal branch cannot reach the destination
     let relay = if let Some(emitter) = arch::meta::relay_builder(target, detour)? {
-      Some(memory::allocate_pic(&mut pool, &emitter, target)?)
+      Some(memory::allocate_pic(&emitter)?)
     } else {
       None
     };
@@ -44,7 +42,7 @@ impl Detour {
     // If a relay is supplied, use it instead of the detour address
     let detour = relay
       .as_ref()
-      .map(|code| code.as_ptr() as *const ())
+      .map(|code| code.ptr as *const ())
       .unwrap_or(detour);
 
     Ok(Detour {
@@ -53,7 +51,7 @@ impl Detour {
         detour,
         trampoline.prolog_size(),
       )?),
-      trampoline: memory::allocate_pic(&mut pool, trampoline.emitter(), target)?,
+      trampoline: memory::allocate_pic(trampoline.emitter())?,
       enabled: AtomicBool::default(),
       relay,
     })
@@ -77,7 +75,7 @@ impl Detour {
   /// Returns a reference to the generated trampoline.
   pub fn trampoline(&self) -> &() {
     unsafe {
-      (self.trampoline.as_ptr() as *const ())
+      (self.trampoline.ptr as *const ())
         .as_ref()
         .expect("trampoline should not be null")
     }
@@ -85,8 +83,6 @@ impl Detour {
 
   /// Enables or disables the detour.
   unsafe fn toggle(&self, enabled: bool) -> Result<()> {
-    let _guard = memory::POOL.lock().unwrap();
-
     if self.enabled.load(Ordering::SeqCst) == enabled {
       return Ok(());
     }
@@ -94,7 +90,7 @@ impl Detour {
     // Runtime code is by default only read-execute
     let _handle = {
       let area = (*self.patcher.get()).area();
-      region::protect_with_handle(
+      region::protect(
         area.as_ptr(),
         area.len(),
         region::Protection::READ_WRITE_EXECUTE,

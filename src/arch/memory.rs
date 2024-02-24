@@ -1,25 +1,20 @@
-use once_cell::sync::Lazy;
-
-use crate::{alloc, arch, error::Result, pic};
-use std::sync::Mutex;
-
-/// Shared allocator for all detours.
-pub static POOL: Lazy<Mutex<alloc::ThreadAllocator>> = Lazy::new(|| {
-  // Use a range of +/- 2 GB for seeking a memory block
-  Mutex::new(alloc::ThreadAllocator::new(arch::meta::DETOUR_RANGE))
-});
+use crate::{alloc, error::Result, pic};
 
 /// Allocates PIC code at the specified address.
-pub fn allocate_pic(
-  pool: &mut alloc::ThreadAllocator,
-  emitter: &pic::CodeEmitter,
-  origin: *const (),
-) -> Result<alloc::ExecutableMemory> {
+pub fn allocate_pic(emitter: &pic::CodeEmitter) -> Result<alloc::ExecutableMemory> {
   // Allocate memory close to the origin
-  pool.allocate(origin, emitter.len()).map(|mut memory| {
-    // Generate code for the obtained address
-    let code = emitter.emit(memory.as_ptr() as *const _);
-    memory.copy_from_slice(code.as_slice());
+  let layout = std::alloc::Layout::from_size_align(emitter.len(), 16)?;
+  let memory = alloc::ExecutableMemory::alloc(layout)?;
+  let code = emitter.emit(memory.ptr as *const _);
+  unsafe {
     memory
-  })
+      .ptr
+      .copy_from_nonoverlapping(code.as_ptr(), code.len());
+    region::protect(
+      memory.ptr,
+      code.len(),
+      region::Protection::READ_WRITE_EXECUTE,
+    )?;
+  }
+  Ok(memory)
 }
